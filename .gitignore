@@ -1,0 +1,32 @@
+# Build output
+**/bin/
+**/obj/
+**/publish/
+**/TestResults/
+
+# Installed dependencies
+**/node_modules/
+
+# Local configuration / secrets
+**/appsettings.Local.json
+**/appsettings.*.local.json
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+*.pfx
+*.p12
+
+# IDE and OS files
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local databases and logs
+*.mdf
+*.ldf
+*.db
+*.sqlite
+*.log
