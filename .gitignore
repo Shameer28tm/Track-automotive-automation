@@ -30,3 +30,7 @@ Thumbs.db
 *.db
 *.sqlite
 *.log
+
+# User uploads
+**/wwwroot/images/profiles/*
+!**/wwwroot/images/profiles/.gitkeep
