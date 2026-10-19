@@ -1,36 +1,90 @@
-# Build output
-**/bin/
-**/obj/
-**/publish/
-**/TestResults/
+﻿# ==========================================
+# Track Automotive Automation .gitignore
+# ==========================================
 
-# Installed dependencies
-**/node_modules/
-
-# Local configuration / secrets
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+*.env.*
+!.env.example
+!*.env.example
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
 **/appsettings.Local.json
 **/appsettings.*.local.json
-.env
-.env.*
-!.env.example
 *.user
 *.suo
 *.pfx
 *.p12
 
-# IDE and OS files
-.vs/
-.idea/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Node & Frontend
+node_modules/
+**/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.tsbuildinfo
+.npm/
+
+# IDEs & OS
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.vs/
 
-# Local databases and logs
-*.mdf
-*.ldf
-*.db
-*.sqlite
-*.log
+# Docker
+.docker/
 
-# User uploads
-**/wwwroot/images/profiles/*
-!**/wwwroot/images/profiles/.gitkeep
+# Backups & Legacy
+*_backup*/
+legacy_backup/
+_legacy_backup/
