@@ -20,6 +20,7 @@ from .serializers import (
     AdminUserManagementSerializer,
 )
 from .permissions import IsAdminUser
+from .services import verify_google_or_firebase_token, AuthenticationVerificationError
 
 logger = logging.getLogger(__name__)
 
@@ -92,131 +93,37 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
 
 class GoogleAuthView(APIView):
     """
-    Google OAuth 2.0 Sign-In and Sign-Up verification endpoint.
-    Accepts Google ID token (credential) or access_token, validates against Google,
-    and returns an application token and user profile.
+    Google & Firebase OAuth 2.0 Sign-In and Sign-Up verification endpoint.
+    Strictly validates token cryptographic signature, issuer, audience/project ID,
+    expiry, and verified email status using Google's authoritative public certs.
+    Completely rejects unverified tokens or client-supplied credentials.
+    New users created via Google Sign-In strictly receive the CUSTOMER role.
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         serializer = GoogleAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        credential = serializer.validated_data.get('credential') or serializer.validated_data.get('id_token')
-        access_token = serializer.validated_data.get('access_token')
+        token = serializer.validated_data['token']
 
-        google_user_info = None
-
-        # 1. Verify ID token directly via Google's tokeninfo API
-        if credential:
-            try:
-                resp = requests.get(
-                    f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}",
-                    timeout=8
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    # Verify audience matches our client ID if configured
-                    client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '')
-                    if client_id and data.get('aud') != client_id:
-                        logger.warning("Google token audience mismatch.")
-                    else:
-                        google_user_info = {
-                            'email': data.get('email'),
-                            'name': data.get('name') or data.get('email', '').split('@')[0],
-                            'picture': data.get('picture'),
-                            'sub': data.get('sub')
-                        }
-                else:
-                    logger.warning(f"Google tokeninfo returned status {resp.status_code}: {resp.text}")
-            except Exception as e:
-                logger.error(f"Google tokeninfo request failed: {e}")
-
-        # 2. Verify via Firebase Identity Toolkit if tokeninfo didn't resolve it
-        firebase_api_key = getattr(settings, 'FIREBASE_API_KEY', '')
-        if not google_user_info and credential and firebase_api_key:
-            try:
-                fb_resp = requests.post(
-                    f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={firebase_api_key}",
-                    json={"idToken": credential},
-                    timeout=8
-                )
-                if fb_resp.status_code == 200:
-                    fb_data = fb_resp.json()
-                    users = fb_data.get('users', [])
-                    if users:
-                        u = users[0]
-                        google_user_info = {
-                            'email': u.get('email'),
-                            'name': u.get('displayName') or (u.get('email', '').split('@')[0] if u.get('email') else 'User'),
-                            'picture': u.get('photoUrl'),
-                            'sub': u.get('localId')
-                        }
-            except Exception as e:
-                logger.error(f"Firebase token lookup failed: {e}")
-
-        # 3. Decode Firebase JWT token payload if issued by Firebase
-        if not google_user_info and credential:
-            try:
-                parts = credential.split('.')
-                if len(parts) == 3:
-                    payload_b64 = parts[1]
-                    rem = len(payload_b64) % 4
-                    if rem > 0:
-                        payload_b64 += '=' * (4 - rem)
-                    payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode('utf-8')).decode('utf-8'))
-                    iss = payload.get('iss', '')
-                    aud = payload.get('aud', '')
-                    fb_project = getattr(settings, 'FIREBASE_PROJECT_ID', 'track-automotive')
-                    if ('securetoken.google.com' in iss or aud == fb_project) and payload.get('email'):
-                        google_user_info = {
-                            'email': payload.get('email'),
-                            'name': payload.get('name') or payload.get('email', '').split('@')[0],
-                            'picture': payload.get('picture'),
-                            'sub': payload.get('user_id') or payload.get('sub')
-                        }
-            except Exception as e:
-                logger.error(f"JWT payload decode failed: {e}")
-
-        # 4. If access_token provided instead of id_token
-        if not google_user_info and access_token:
-            try:
-                resp = requests.get(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {access_token}"},
-                    timeout=5
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    google_user_info = {
-                        'email': data.get('email'),
-                        'name': data.get('name') or data.get('email', '').split('@')[0],
-                        'picture': data.get('picture'),
-                        'sub': data.get('sub')
-                    }
-            except Exception as e:
-                logger.error(f"Google userinfo request failed: {e}")
-
-        # 5. Check client-provided payload if token was provided or in DEBUG mode
-        if not google_user_info:
-            client_email = serializer.validated_data.get('email')
-            if client_email and (getattr(settings, 'DEBUG', False) or credential):
-                google_user_info = {
-                    'email': client_email,
-                    'name': serializer.validated_data.get('name') or client_email.split('@')[0],
-                    'picture': serializer.validated_data.get('picture', None),
-                    'sub': serializer.validated_data.get('sub') or f"firebase-{client_email}"
-                }
-
-        if not google_user_info or not google_user_info.get('email'):
+        try:
+            verified_claims = verify_google_or_firebase_token(token)
+        except AuthenticationVerificationError as e:
             return Response(
-                {"detail": "Invalid or expired Google/Firebase authentication credentials."},
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Unexpected token verification failure: {e}")
+            return Response(
+                {"detail": "Authentication token verification failed."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        email = google_user_info['email'].lower().strip()
-        google_id = google_user_info.get('sub')
-        name = google_user_info.get('name', '')
-        picture = google_user_info.get('picture')
+        email = verified_claims['email']
+        google_id = verified_claims['sub']
+        name = verified_claims['name']
+        picture = verified_claims['picture']
 
         # Find or create user
         user = User.objects.filter(email=email).first()

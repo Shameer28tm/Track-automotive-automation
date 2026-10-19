@@ -16,7 +16,7 @@ export const RegisterPage = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { register, googleLogin, loginWithGoogle } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const handleGoogleSignIn = async () => {
@@ -37,19 +37,6 @@ export const RegisterPage = () => {
       } else if (err.code === 'auth/operation-not-allowed') {
         setError('Google provider is not enabled in Firebase Console (Authentication > Sign-in method).');
       } else {
-        if (import.meta.env.DEV && !err.response) {
-          try {
-            await googleLogin({
-              email: 'google.driver@example.com',
-              name: 'Alex Google Driver',
-              picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
-            });
-            navigate('/dashboard');
-            return;
-          } catch (mockErr) {
-            console.error('Mock fallback error:', mockErr);
-          }
-        }
         setError(err.response?.data?.detail || err.message || 'Google authentication failed.');
       }
     } finally {

@@ -74,10 +74,13 @@ class LoginSerializer(serializers.Serializer):
 
 
 class GoogleAuthSerializer(serializers.Serializer):
-    credential = serializers.CharField(required=False, allow_blank=True, help_text="Google or Firebase ID token (credential)")
-    id_token = serializers.CharField(required=False, allow_blank=True, help_text="Firebase or Google ID token")
-    access_token = serializers.CharField(required=False, allow_blank=True, help_text="Google OAuth access token")
-    email = serializers.EmailField(required=False)
-    name = serializers.CharField(required=False, allow_blank=True)
-    picture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    sub = serializers.CharField(required=False, allow_blank=True)
+    credential = serializers.CharField(required=False, allow_blank=False, help_text="Cryptographically signed Google or Firebase ID token")
+    id_token = serializers.CharField(required=False, allow_blank=False, help_text="Alias for credential token")
+
+    def validate(self, attrs):
+        raw_token = attrs.get('credential') or attrs.get('id_token')
+        if not raw_token or not str(raw_token).strip():
+            raise serializers.ValidationError({"credential": "A valid Google or Firebase ID token is required."})
+        
+        # Only preserve the validated token string; strip any client-supplied spoofing data
+        return {'token': str(raw_token).strip()}
