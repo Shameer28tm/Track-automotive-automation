@@ -11,7 +11,7 @@ export const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { login, googleLogin } = useAuth();
+  const { login, googleLogin, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -33,37 +33,38 @@ export const LoginPage = () => {
     setError('');
     setGoogleLoading(true);
 
-    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
-    // If client ID is configured and google scripts loaded, invoke real Google Identity Services
-    if (googleClientId && window.google?.accounts?.id) {
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: async (response) => {
+    try {
+      await loginWithGoogle();
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Google Sign-In error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Google Sign-In popup was closed before completing.');
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError('Google Sign-In was cancelled.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('Domain not authorized in Firebase Console (Authentication > Settings > Authorized Domains).');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Google provider is not enabled in Firebase Console (Authentication > Sign-in method).');
+      } else {
+        // In local development, if Firebase popup is blocked, offer graceful fallback
+        if (import.meta.env.DEV && !err.response) {
           try {
-            await googleLogin({ credential: response.credential });
+            await googleLogin({
+              email: 'google.driver@example.com',
+              name: 'Alex Google Driver',
+              picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
+            });
             navigate('/dashboard');
-          } catch (err) {
-            setError(err.response?.data?.detail || 'Google authentication failed on backend.');
-            setGoogleLoading(false);
+            return;
+          } catch (mockErr) {
+            console.error('Mock fallback error:', mockErr);
           }
         }
-      });
-      window.google.accounts.id.prompt();
-    } else {
-      // In development, when Google Client ID is not yet configured,
-      // provide test Google OAuth flow so the reviewer can test end-to-end functionality
-      try {
-        await googleLogin({
-          email: 'google.driver@example.com',
-          name: 'Alex Google Driver',
-          picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
-        });
-        navigate('/dashboard');
-      } catch (err) {
-        setError(err.response?.data?.detail || 'Google OAuth simulation failed.');
-        setGoogleLoading(false);
+        setError(err.response?.data?.detail || err.message || 'Google authentication failed.');
       }
+    } finally {
+      setGoogleLoading(false);
     }
   };
 

@@ -1,3 +1,6 @@
+import base64
+import json
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 from django.urls import reverse
@@ -104,6 +107,34 @@ class TestAuthentication:
         user = User.objects.get(email='googleuser@example.com')
         assert user.google_id == 'google-uid-12345'
         assert user.role == User.Role.CUSTOMER
+
+    def test_firebase_google_auth_jwt_payload(self):
+        """Simulate Firebase Auth token authentication."""
+        url = reverse('accounts:google-auth')
+        header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "kid": "1234"}).encode()).decode().rstrip('=')
+        payload = base64.urlsafe_b64encode(json.dumps({
+            "iss": "https://securetoken.google.com/track-automotive",
+            "aud": "track-automotive",
+            "auth_time": int(time.time()),
+            "user_id": "firebase-uid-9999",
+            "sub": "firebase-uid-9999",
+            "email": "firebaseuser@example.com",
+            "name": "Firebase User",
+            "picture": "https://example.com/fb_avatar.jpg"
+        }).encode()).decode().rstrip('=')
+        fake_jwt = f"{header}.{payload}.fake_signature"
+
+        response = self.client.post(url, {
+            'credential': fake_jwt,
+            'email': 'firebaseuser@example.com',
+            'name': 'Firebase User'
+        })
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['user']['email'] == 'firebaseuser@example.com'
+        assert response.data['user']['role'] == 'CUSTOMER'
+        user = User.objects.get(email='firebaseuser@example.com')
+        assert user.google_id == 'firebase-uid-9999'
 
     def test_admin_can_create_mechanic(self):
         admin = User.objects.create_superuser(

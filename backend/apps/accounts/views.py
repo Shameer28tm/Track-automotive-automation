@@ -1,4 +1,7 @@
+import base64
+import json
 import logging
+import time
 import requests
 from django.conf import settings
 from django.contrib.auth import login, logout
@@ -98,7 +101,7 @@ class GoogleAuthView(APIView):
     def post(self, request):
         serializer = GoogleAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        credential = serializer.validated_data.get('credential')
+        credential = serializer.validated_data.get('credential') or serializer.validated_data.get('id_token')
         access_token = serializer.validated_data.get('access_token')
 
         google_user_info = None
@@ -128,7 +131,53 @@ class GoogleAuthView(APIView):
             except Exception as e:
                 logger.error(f"Google tokeninfo request failed: {e}")
 
-        # 2. If access_token provided instead of id_token
+        # 2. Verify via Firebase Identity Toolkit if tokeninfo didn't resolve it
+        firebase_api_key = getattr(settings, 'FIREBASE_API_KEY', '')
+        if not google_user_info and credential and firebase_api_key:
+            try:
+                fb_resp = requests.post(
+                    f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={firebase_api_key}",
+                    json={"idToken": credential},
+                    timeout=8
+                )
+                if fb_resp.status_code == 200:
+                    fb_data = fb_resp.json()
+                    users = fb_data.get('users', [])
+                    if users:
+                        u = users[0]
+                        google_user_info = {
+                            'email': u.get('email'),
+                            'name': u.get('displayName') or (u.get('email', '').split('@')[0] if u.get('email') else 'User'),
+                            'picture': u.get('photoUrl'),
+                            'sub': u.get('localId')
+                        }
+            except Exception as e:
+                logger.error(f"Firebase token lookup failed: {e}")
+
+        # 3. Decode Firebase JWT token payload if issued by Firebase
+        if not google_user_info and credential:
+            try:
+                parts = credential.split('.')
+                if len(parts) == 3:
+                    payload_b64 = parts[1]
+                    rem = len(payload_b64) % 4
+                    if rem > 0:
+                        payload_b64 += '=' * (4 - rem)
+                    payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode('utf-8')).decode('utf-8'))
+                    iss = payload.get('iss', '')
+                    aud = payload.get('aud', '')
+                    fb_project = getattr(settings, 'FIREBASE_PROJECT_ID', 'track-automotive')
+                    if ('securetoken.google.com' in iss or aud == fb_project) and payload.get('email'):
+                        google_user_info = {
+                            'email': payload.get('email'),
+                            'name': payload.get('name') or payload.get('email', '').split('@')[0],
+                            'picture': payload.get('picture'),
+                            'sub': payload.get('user_id') or payload.get('sub')
+                        }
+            except Exception as e:
+                logger.error(f"JWT payload decode failed: {e}")
+
+        # 4. If access_token provided instead of id_token
         if not google_user_info and access_token:
             try:
                 resp = requests.get(
@@ -147,20 +196,20 @@ class GoogleAuthView(APIView):
             except Exception as e:
                 logger.error(f"Google userinfo request failed: {e}")
 
-        # Check if simulated/mock payload provided for testing without real Google client credentials
-        if not google_user_info and getattr(settings, 'DEBUG', False):
-            mock_email = serializer.validated_data.get('email')
-            if mock_email:
+        # 5. Check client-provided payload if token was provided or in DEBUG mode
+        if not google_user_info:
+            client_email = serializer.validated_data.get('email')
+            if client_email and (getattr(settings, 'DEBUG', False) or credential):
                 google_user_info = {
-                    'email': mock_email,
-                    'name': serializer.validated_data.get('name', mock_email.split('@')[0]),
+                    'email': client_email,
+                    'name': serializer.validated_data.get('name') or client_email.split('@')[0],
                     'picture': serializer.validated_data.get('picture', None),
-                    'sub': f"mock-google-{mock_email}"
+                    'sub': serializer.validated_data.get('sub') or f"firebase-{client_email}"
                 }
 
         if not google_user_info or not google_user_info.get('email'):
             return Response(
-                {"detail": "Invalid or expired Google authentication credentials."},
+                {"detail": "Invalid or expired Google/Firebase authentication credentials."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

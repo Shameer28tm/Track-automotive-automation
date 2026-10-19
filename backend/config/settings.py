@@ -154,10 +154,12 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.stri
 csrf_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_origins_env.split(',') if o.strip()]
 
-# Google OAuth Settings
+# Google & Firebase OAuth Settings
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:5173/auth/google/callback')
+FIREBASE_PROJECT_ID = os.getenv('FIREBASE_PROJECT_ID', 'track-automotive')
+FIREBASE_API_KEY = os.getenv('FIREBASE_API_KEY', 'AIzaSyChziaIvm_zXiAqL_qZW3nIgPRhFekaW1Q')
 
 # AI Chatbot Settings
 AI_PROVIDER = os.getenv('AI_PROVIDER', 'mock').lower()  # gemini, openai, groq, mock

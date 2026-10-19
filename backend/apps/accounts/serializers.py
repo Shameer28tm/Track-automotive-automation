@@ -74,8 +74,10 @@ class LoginSerializer(serializers.Serializer):
 
 
 class GoogleAuthSerializer(serializers.Serializer):
-    credential = serializers.CharField(required=False, help_text="Google ID token (credential)")
-    access_token = serializers.CharField(required=False, help_text="Google OAuth access token")
+    credential = serializers.CharField(required=False, allow_blank=True, help_text="Google or Firebase ID token (credential)")
+    id_token = serializers.CharField(required=False, allow_blank=True, help_text="Firebase or Google ID token")
+    access_token = serializers.CharField(required=False, allow_blank=True, help_text="Google OAuth access token")
     email = serializers.EmailField(required=False)
-    name = serializers.CharField(required=False)
-    picture = serializers.URLField(required=False)
+    name = serializers.CharField(required=False, allow_blank=True)
+    picture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    sub = serializers.CharField(required=False, allow_blank=True)

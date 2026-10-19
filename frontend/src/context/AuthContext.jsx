@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../api/client';
+import { signInWithGoogle, logoutFirebase } from '../config/firebase';
 
 const AuthContext = createContext(null);
 
@@ -54,6 +55,25 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  /**
+   * Firebase Google Sign In integration.
+   * Opens Firebase Google popup, acquires credentials, and synchronizes with Django backend.
+   */
+  const loginWithGoogle = async () => {
+    const firebaseResult = await signInWithGoogle();
+    const res = await authApi.googleAuth({
+      credential: firebaseResult.credential,
+      id_token: firebaseResult.idToken,
+      access_token: firebaseResult.accessToken,
+      email: firebaseResult.email,
+      name: firebaseResult.name,
+      picture: firebaseResult.picture,
+      sub: firebaseResult.sub,
+    });
+    handleAuthSuccess(res.data.user, res.data.token);
+    return res.data;
+  };
+
   const logout = async () => {
     try {
       if (token) {
@@ -62,6 +82,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       // Ignore network errors on logout
     } finally {
+      await logoutFirebase();
       setUser(null);
       setToken(null);
       sessionStorage.removeItem('auth_user');
@@ -83,6 +104,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     googleLogin,
+    loginWithGoogle,
     logout,
     updateProfile,
     isAuthenticated: !!user,
@@ -101,3 +123,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
+export default AuthContext;
